@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Comandante Luis Jorge Fontana, recreación con IA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Alegreya:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#f3efe8;--ink:#1d2433;--blue:#1f4fb3;--sky:#6db6e3;--red:#cf2a30;--gold:#e0ac16;--mute:#566074}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--paper);color:var(--ink);font:19px/1.45 Alegreya,Georgia,serif;overflow:hidden}
+main{height:100dvh;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+/* El escenario 3D es una caja propia: ningún texto se dibuja encima de él. */
+#stage{position:relative;margin:14px;border:10px solid var(--sky);background:#f7f4ef;overflow:hidden;min-height:0}
+#c{position:absolute;inset:0;width:100%;height:100%;display:block}
+aside{display:flex;flex-direction:column;gap:14px;min-height:0;padding:30px 30px 18px 12px}
+h1{margin:0;font-size:2.2rem;line-height:1.05}
+.sub{margin:4px 0 0;color:var(--mute);font-style:italic}
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+#status{margin:0 4px 0 0;padding:4px 12px;border-radius:99px;background:#e4e0d8;font-size:.95rem}
+#status[data-s=listen]{background:#d7e8f6}#status[data-s=talk]{background:#fbe6a8}#status[data-s=wait]{background:#eee}
+button{min-height:48px;padding:0 20px;border:2px solid var(--blue);border-radius:6px;background:var(--blue);color:#fff;font:700 1rem Alegreya,Georgia,serif;cursor:pointer}
+button.alt{background:transparent;color:var(--blue)}
+button:disabled{opacity:.55;cursor:wait}
+button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+#notice{margin:0;padding:10px 12px;border-left:4px solid var(--red);background:#fbe9e9}
+#log{flex:1;min-height:0;overflow-y:auto;padding-right:6px;display:flex;flex-direction:column;gap:10px}
+#log p{margin:0;max-width:62ch}
+#log .ai{font-size:1.12rem}
+#log .me{color:var(--mute);font-style:italic;padding-left:14px;border-left:3px solid var(--sky)}
+#log .hint{color:var(--mute)}
+.fine{margin:0;font-size:.85rem;color:var(--mute)}
+@media (max-width:860px){
+ body{font-size:17px}
+ main{grid-template-columns:1fr;grid-template-rows:minmax(0,46dvh) minmax(0,1fr)}
+ #stage{margin:10px 10px 0;border-width:8px}
+ aside{padding:12px 16px 12px;gap:10px}
+ h1{font-size:1.7rem}
+}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<main>
+ <div id="stage"><canvas id="c" aria-label="Retrato tridimensional del comandante Luis Jorge Fontana" role="img"></canvas></div>
+ <aside>
+  <header>
+   <h1>Luis Jorge Fontana</h1>
+   <p class="sub">Recreación con inteligencia artificial, Formosa 1879</p>
+  </header>
+  <div class="bar">
+   <p id="status" role="status">Listo para conversar</p>
+   <button id="talk" type="button">Hablar con el comandante</button>
+   <button id="mute" class="alt" type="button" aria-pressed="false" hidden>Silenciar micrófono</button>
+  </div>
+  <p id="notice" role="alert" hidden></p>
+  <div id="log" aria-live="polite"><p class="hint">Pregúntele por la fundación de Formosa, su infancia en Patagones o su trabajo como naturalista.</p></div>
+  <p class="fine">No es la persona real: es una recreación educativa. El agente aclara qué datos están documentados y cuáles solo se le atribuyen.</p>
+ </aside>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script type="module">
+const AGENT_ID="agent_1101m4hdvjebf29ahcp75339q1cd";
+const SDK="https://cdn.jsdelivr.net/npm/@elevenlabs/client@1.16.0/+esm";
+const $=s=>document.querySelector(s),Q=new URLSearchParams(location.search);
+const stage=$("#stage"),btn=$("#talk"),mute=$("#mute"),log=$("#log"),st=$("#status"),note=$("#notice");
+const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+let conv=null,vol=0,speaking=false,live=false,muted=false;
+
+const setSt=(t,s)=>{st.textContent=t;st.dataset.s=s||""};
+const warn=t=>{note.textContent=t;note.hidden=!t};
+const say=(w,t)=>{log.querySelector(".hint")?.remove();const p=document.createElement("p");p.className=w;p.textContent=t;log.append(p);log.scrollTop=log.scrollHeight};
+const ui=on=>{btn.disabled=false;btn.textContent=on?"Terminar conversación":"Hablar con el comandante";mute.hidden=!on};
+
+/* ---------- Conversación con el agente (SDK de ElevenLabs) ---------- */
+async function start(){
+ btn.disabled=true;warn("");setSt("Conectando…","wait");
+ try{
+  if(Q.has("demo")){live=true;ui(true);setSt("Modo demostración","talk");say("ai","Vista previa de la animación: aquí aparecerá lo que diga el agente.");speaking=true;setTimeout(()=>{speaking=false;setSt("Modo demostración","listen")},4500);return}
+  const s=await navigator.mediaDevices.getUserMedia({audio:true});s.getTracks().forEach(t=>t.stop());
+  const {Conversation}=await import(SDK);
+  const cb={
+   onConnect:()=>{live=true;ui(true);setSt("Escuchando","listen")},
+   onDisconnect:()=>end(),
+   onError:()=>{warn("Se interrumpió la conexión con el agente. Intente de nuevo.");end()},
+   onModeChange:({mode})=>{speaking=mode==="speaking";setSt(speaking?"Hablando":"Escuchando",speaking?"talk":"listen")},
+   onMessage:m=>say(/^(ai|agent)$/.test(m.source||m.role)?"ai":"me",m.message)
+  };
+  try{conv=await Conversation.startSession({agentId:AGENT_ID,connectionType:"webrtc",...cb})}
+  catch(e){conv=await Conversation.startSession({agentId:AGENT_ID,connectionType:"websocket",...cb})}
+ }catch(e){
+  warn(e&&e.name==="NotAllowedError"?"Necesito permiso para usar el micrófono. Actívelo en el navegador y toque el botón otra vez.":"No pude conectar con el agente. Revise su conexión e intente de nuevo.");
+  end();
+ }
+}
+function end(){
+ const c=conv;conv=null;try{c&&c.endSession()}catch(_){}
+ live=false;speaking=false;vol=0;muted=false;mute.setAttribute("aria-pressed","false");mute.textContent="Silenciar micrófono";
+ ui(false);setSt("Listo para conversar","");
+}
+btn.onclick=()=>live?end():start();
+mute.onclick=()=>{muted=!muted;try{conv&&conv.setMicMuted(muted)}catch(_){}mute.setAttribute("aria-pressed",String(muted));mute.textContent=muted?"Activar micrófono":"Silenciar micrófono"};
+
+/* ---------- Retrato 3D (Three.js r128) ---------- */
+(function scene3d(){
+ const T=window.THREE;
+ if(!T){warn("No se pudo cargar Three.js, por eso no aparece el modelo 3D.");return}
+ let R;try{R=new T.WebGLRenderer({canvas:$("#c"),antialias:true,alpha:true})}catch(e){warn("Su navegador no pudo iniciar WebGL, por eso no aparece el modelo 3D.");return}
+ R.setPixelRatio(Math.min(devicePixelRatio||1,2));
+ const S=new T.Scene(),C=new T.PerspectiveCamera(26,1,.1,100);
+ const gm=new T.DataTexture(new Uint8Array([110,180,255]),3,1,T.LuminanceFormat);
+ gm.minFilter=gm.magFilter=T.NearestFilter;gm.generateMipmaps=false;gm.needsUpdate=true;
+ const M=c=>new T.MeshToonMaterial({color:c,gradientMap:gm}),K=new T.MeshBasicMaterial({color:0x140c08,side:T.BackSide});
+ const SK=0xf1c79f,BL=0x1f4fb3,RD=0xcf2a30,GD=0xe0ac16,WH=0xf5f2ec,HR=0x2a1a12,TF=0xe0dcd6,BK=0x160d09;
+ const sph=new T.SphereGeometry(1,28,20),box=new T.BoxGeometry(1,1,1);
+ const add=(p,g,c,pos=[0,0,0],sc=[1,1,1],ol=.035)=>{const m=new T.Mesh(g,M(c));m.position.set(...pos);m.scale.set(...sc);p.add(m);if(ol){const o=new T.Mesh(g,K);o.scale.setScalar(1+ol);m.add(o)}return m};
+ /* tubo de grosor variable: cejas y bigote */
+ const tube=(p,pts,rf,col)=>{
+  const cu=new T.CatmullRomCurve3(pts.map(a=>new T.Vector3(...a))),N=36,Rr=8,fr=cu.computeFrenetFrames(N,false),pos=[],idx=[];
+  for(let i=0;i<=N;i++){const t=i/N,P=cu.getPoint(t),n=fr.normals[i],b=fr.binormals[i],r=rf(t);
+   for(let j=0;j<Rr;j++){const a=j/Rr*6.2832,u=Math.cos(a),v=.6*Math.sin(a);pos.push(P.x+r*(u*n.x+v*b.x),P.y+r*(u*n.y+v*b.y),P.z+r*(u*n.z+v*b.z))}}
+  for(let i=0;i<N;i++)for(let j=0;j<Rr;j++){const a=i*Rr+j,b=i*Rr+(j+1)%Rr;idx.push(a,a+Rr,b,b,a+Rr,b+Rr)}
+  const g=new T.BufferGeometry();g.setAttribute("position",new T.Float32BufferAttribute(pos,3));g.setIndex(idx);g.computeVertexNormals();
+  const m=new T.Mesh(g,M(col));m.material.side=T.DoubleSide;p.add(m);return m};
+
+ const rig=new T.Group(),head=new T.Group(),body=new T.Group();rig.add(head,body);S.add(rig);
+
+ /* cabeza: óvalo alargado que se afina hacia el mentón; fz() da la superficie para apoyar los rasgos */
+ const SX=.92,SY=1.15,SZ=.95;
+ const fz=(x,y)=>{const t=Math.max(0,-y/SY),xf=1-.3*Math.pow(t,1.4),ux=x/(SX*xf),uy=y/SY,s=1-ux*ux-uy*uy;return s>0?Math.sqrt(s)*SZ*(1-.12*t):0};
+ const hg=new T.SphereGeometry(1,48,36),pp=hg.attributes.position;
+ for(let i=0;i<pp.count;i++){const x=pp.getX(i),y=pp.getY(i),z=pp.getZ(i),t=Math.max(0,-y);pp.setXYZ(i,x*SX*(1-.3*Math.pow(t,1.4)),y*SY,z*SZ*(1-.12*t))}
+ hg.computeVertexNormals();
+ add(head,hg,SK,[0,0,0],[1,1,1],.03);
+ for(const s of[-1,1]){add(head,sph,SK,[s*.9,-.02,-.05],[.12,.22,.08]);add(head,sph,0xdca480,[s*.92,-.02,-.01],[.06,.12,.04],0)}
+ /* nariz */
+ add(head,sph,0xeab68b,[0,-.12,fz(0,-.12)-.03],[.16,.3,.2],.03);
+ add(head,sph,0xeab68b,[0,-.34,fz(0,-.34)-.01],[.15,.11,.13],.03);
+ for(const s of[-1,1])add(head,sph,0x7a4a33,[s*.08,-.39,fz(0,-.39)+.02],[.04,.03,.03],0);
+ /* ojos: blanco, iris verde grisáceo, pupila, brillo y línea del párpado */
+ const eyes=[];
+ for(const s of[-1,1]){
+  const x=s*.36,y=.1,g=new T.Group();g.position.set(x,y,fz(x,y)-.04);head.add(g);
+  add(g,sph,0xffffff,[0,0,0],[.19,.125,.09],.05);
+  add(g,sph,0x8f9062,[0,0,.05],[.085,.085,.05],0);add(g,sph,0x0a0a0a,[0,0,.085],[.04,.04,.02],0);add(g,sph,0xffffff,[.02,.025,.1],[.016,.016,.01],0);
+  const lid=new T.Mesh(new T.TorusGeometry(.2,.024,6,24,Math.PI),new T.MeshBasicMaterial({color:BK}));lid.scale.y=.62;lid.position.set(0,.01,.07);g.add(lid);
+  eyes.push(g);
+  const bp=[[.14,.36],[.38,.44],[.62,.38]].map(([a,b])=>[s*a,b,fz(s*a,b)+.02]);
+  tube(head,bp,t=>.065*(1-.5*t)+.012,HR);
+ }
+ /* bigote de puntas hacia arriba, mentón (perilla) y boca que se abre al hablar */
+ for(const s of[-1,1]){
+  const mp=[[0,-.5],[.2,-.54],[.4,-.55],[.54,-.5],[.62,-.4],[.6,-.3]].map(([a,b])=>[s*a,b,fz(s*a,b)+.045]);
+  tube(head,mp,t=>.095*Math.pow(1-t,.7)+.016,BK);
+ }
+ const jaw=new T.Group();head.add(jaw);
+ const mouth=add(jaw,sph,0x3b0f0f,[0,-.66,fz(0,-.66)+.005],[.17,.1,.05],0);
+ add(jaw,sph,BK,[0,-.86,fz(0,-.86)+.02],[.09,.14,.05],0);
+ /* pelo: casquete oscuro, patillas y mechón gris claro arriba */
+ const cap=new T.Mesh(new T.SphereGeometry(1,48,24,0,6.2832,0,Math.PI*.36),M(HR));
+ cap.scale.set(SX*1.08,SY*1.08,SZ*1.08);cap.rotation.x=-.2;head.add(cap);
+ add(head,sph,HR,[0,.1,-.45],[SX*1.02,SY*.95,.6],0);
+ for(const s of[-1,1])add(head,sph,HR,[s*.86,.3,-.12],[.2,.46,.45],.03);
+ add(head,sph,TF,[-.08,1.2,.05],[.42,.24,.5],.04);add(head,sph,TF,[.17,1.17,0],[.3,.2,.4],.04);
+
+ /* torso: casaca azul con frente plano, cuello blanco, banda roja, charreteras y botones dorados */
+ const sh=new T.Shape();
+ sh.moveTo(-2.4,-6.2);sh.lineTo(-2.4,-2.9);sh.quadraticCurveTo(-2.4,-2,-1.5,-1.85);sh.lineTo(-.6,-1.5);sh.lineTo(.6,-1.5);sh.lineTo(1.5,-1.85);sh.quadraticCurveTo(2.4,-2,2.4,-2.9);sh.lineTo(2.4,-6.2);sh.closePath();
+ const tg=new T.ExtrudeGeometry(sh,{depth:.9,bevelEnabled:true,bevelThickness:.3,bevelSize:.25,bevelOffset:-.25,bevelSegments:5});
+ tg.computeBoundingBox();const bb=tg.boundingBox,cy=(bb.min.y+bb.max.y)/2,cz=(bb.min.z+bb.max.z)/2,F=bb.max.z;
+ tg.translate(0,-cy,-cz);
+ const torso=add(body,tg,BL,[0,cy,cz],[1,1,1],.012);
+ const Fz=F+.01;
+ add(body,new T.CylinderGeometry(.42,.46,.8,24),SK,[0,-1.25,0],[1,1,1],.03);
+ const tri=new T.Shape();tri.moveTo(-.5,-1.7);tri.lineTo(.5,-1.7);tri.lineTo(0,-2.5);tri.closePath();
+ const shirt=new T.Mesh(new T.ShapeGeometry(tri),M(WH));shirt.position.z=Fz+.01;body.add(shirt);
+ for(const s of[-1,1]){
+  const c=add(body,box,BL,[s*.66,-1.72,.3],[.5,.85,.7],.03);c.rotation.z=s*-.2;
+  const g=add(body,box,GD,[s*.42,-1.72,.3],[.06,.85,.72],0);g.rotation.z=s*-.2;
+ }
+ /* banda roja con filos dorados, en diagonal sobre el pecho */
+ const a=[-1,-2.1],b=[1.2,-4.2],dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy),sg=new T.Group();
+ sg.position.set((a[0]+b[0])/2,(a[1]+b[1])/2,Fz+.02);sg.rotation.z=Math.atan2(dy,dx)-Math.PI/2;body.add(sg);
+ add(sg,new T.PlaneGeometry(.64,L),RD,[0,0,0],[1,1,1],0);
+ for(const s of[-1,1])add(sg,new T.PlaneGeometry(.1,L),GD,[s*.37,0,.01],[1,1,1],0);
+ for(const y of[-2.8,-3.25])add(body,sph,GD,[.98,y,Fz+.04],[.09,.09,.04],.1);
+ for(const s of[-1,1]){
+  add(body,sph,GD,[s*1.95,-2.0,.15],[.56,.26,.42],.05);
+  for(let i=0;i<9;i++)add(body,new T.CylinderGeometry(.03,.03,.5,6),GD,[s*(1.62+i*.09),-2.55,.2],[1,1,1],0);
+ }
+
+ /* ---------- cámara, luces y animación ---------- */
+ S.add(new T.AmbientLight(0xffffff,.78));const dl=new T.DirectionalLight(0xffffff,.9);dl.position.set(-3,4,6);S.add(dl);
+ const FY=-.95,FH=5.2,FW=5.4,tn=Math.tan(26*Math.PI/360);
+ function fit(){
+  const w=stage.clientWidth,h=stage.clientHeight;if(!w||!h)return;
+  R.setSize(w,h,false);C.aspect=w/h;
+  const d=Math.max(FH/(2*tn),FW/(2*tn*C.aspect));C.position.set(0,FY,d);C.lookAt(0,FY,0);C.updateProjectionMatrix();
+ }
+ new ResizeObserver(fit).observe(stage);fit();
+ let mx=0,my=0,open=0,nextBlink=2000,blinkAt=-1;
+ addEventListener("pointermove",e=>{const r=stage.getBoundingClientRect();mx=Math.max(-1,Math.min(1,((e.clientX-r.left)/r.width-.5)*2));my=Math.max(-1,Math.min(1,((e.clientY-r.top)/r.height-.5)*2))});
+ let fr=0;
+ R.setAnimationLoop(t=>{
+  if(conv&&++fr%2===0)Promise.resolve(conv.getOutputVolume()).then(v=>{vol=+v||0}).catch(()=>{});
+  const k=reduce?0:1;
+  head.rotation.y+=(mx*.35*k-head.rotation.y)*.08;head.rotation.x+=(my*.18*k-head.rotation.x)*.08;
+  head.rotation.z=Math.sin(t/2600)*.015*k;body.scale.y=1+Math.sin(t/1700)*.004*k;
+  const target=Math.min(1,vol*2.2+(speaking?.25+.25*Math.sin(t*.014):0));
+  open+=(target-open)*.35;mouth.scale.y=.1*(1+open*8);jaw.position.y=-open*.1;
+  if(blinkAt<0&&t>nextBlink)blinkAt=t;
+  let e=1;if(blinkAt>=0){const p=(t-blinkAt)/150;if(p>=1){blinkAt=-1;nextBlink=t+2500+Math.random()*2500}else e=1-Math.sin(p*Math.PI)*.92}
+  eyes.forEach(g=>g.scale.y=e);
+  R.render(S,C);
+ });
+ /* Comprobación de que el rostro no queda bajo ningún texto (se puede invocar desde la consola) */
+ window.__fontana={check(){
+  const bx=new T.Box3().setFromObject(head),pts=[];
+  for(const x of[bx.min.x,bx.max.x])for(const y of[bx.min.y,bx.max.y])for(const z of[bx.min.z,bx.max.z])pts.push(new T.Vector3(x,y,z).project(C));
+  const r=stage.getBoundingClientRect(),X=pts.map(p=>r.left+(p.x+1)/2*r.width),Y=pts.map(p=>r.top+(1-p.y)/2*r.height);
+  const f={left:Math.min(...X),right:Math.max(...X),top:Math.min(...Y),bottom:Math.max(...Y)};
+  const hit=[...document.querySelectorAll("aside *")].filter(el=>{const q=el.getBoundingClientRect();return q.width&&q.height&&el.getClientRects().length&&!(q.right<f.left||q.left>f.right||q.bottom<f.top||q.top>f.bottom)});
+  return{face:f,stage:r.toJSON(),textElementsOverFace:hit.map(e=>e.tagName+(e.id?"#"+e.id:""))};
+ }};
+})();
+</script>
+</body>
+</html>
