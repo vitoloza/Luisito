@@ -32,6 +32,7 @@ button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
 #log .me{color:var(--mute);font-style:italic;padding-left:14px;border-left:3px solid var(--sky)}
 #log .hint{color:var(--mute)}
 #chat{display:flex;gap:8px}
+#chat[hidden]{display:none}
 #chat input{flex:1;min-width:0;min-height:48px;padding:0 14px;border:2px solid var(--blue);border-radius:6px;background:#fff;color:var(--ink);font:inherit}
 #chat input:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
 .fine{margin:0;font-size:.85rem;color:var(--mute)}
@@ -41,6 +42,10 @@ button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
  #stage{margin:10px 10px 0;border-width:8px}
  aside{padding:12px 16px 12px;gap:10px}
  h1{font-size:1.7rem}
+ .bar{gap:8px}
+ #talk{flex:1 1 100%}
+ .bar button.alt{flex:1 1 0;min-height:44px;padding:0 10px;font-size:.95rem}
+ #status{margin:0}
 }
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
 </style>
@@ -58,6 +63,7 @@ button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
    <button id="talk" type="button">Hablar con el comandante</button>
    <button id="mute" class="alt" type="button" aria-pressed="false" hidden>Silenciar micrófono</button>
    <button id="type" class="alt" type="button">Prefiero escribir</button>
+   <button id="style" class="alt" type="button" aria-pressed="false">Dibujo animado 3D</button>
   </div>
   <p id="notice" role="alert" hidden></p>
   <div id="log" aria-live="polite"><p class="hint">Pregúntele por la fundación de Formosa, su infancia en Patagones o su trabajo como naturalista.</p></div>
@@ -148,24 +154,25 @@ precision highp float;
 #else
 precision mediump float;
 #endif
-uniform sampler2D T;uniform vec2 look;uniform float mouth,blink,brow,rot,bob;varying vec2 uv;
+uniform sampler2D T;uniform vec2 look;uniform float mouth,blink,brow,rot,bob,turn;const vec2 E1=vec2(.300,.2415),E2=vec2(.4225,.2385);varying vec2 uv;
 float g(vec2 p,vec2 c,vec2 s){vec2 d=(p-c)/s;return exp(-dot(d,d));}
 const vec2 ER=vec2(.029,.0115);
 float lidY(vec2 q,vec2 ec,float b){vec2 e=(q-ec)/ER;return ec.y-ER.y+b*1.8*ER.y+.0035*b*(1.-e.x*e.x);}
 vec3 lidCol(vec2 q,vec2 ec,float b,vec3 c){vec2 e=(q-ec)/(ER*vec2(1.12,1.3));float em=smoothstep(1.,.35,dot(e,e));float cover=1.-smoothstep(-.0012,.0012,q.y-lidY(q,ec,b));return mix(c,texture2D(T,q-vec2(0.,b*1.8*ER.y)).rgb,em*cover);}
 float lash(vec2 q,vec2 ec,float b){vec2 e=(q-ec)/(ER*vec2(1.2,1.6));float em=smoothstep(1.,.5,dot(e,e));return em*exp(-pow((q.y-lidY(q,ec,b))/.0016,2.));}
 void main(){
- vec2 q=uv,o=vec2(.42,.46),r=q-o;float cs=cos(rot),sn=sin(rot);
+ vec2 q=uv;q.x-=turn*(.062*g(q,vec2(.40,.27),vec2(.17,.25))+.026*g(q,vec2(.35,.31),vec2(.045,.06)));vec2 o=vec2(.42,.46),r=q-o;float cs=cos(rot),sn=sin(rot);
  q=o+vec2(cs*r.x+sn*r.y,-sn*r.x+cs*r.y);q.y+=bob;
  float d=.3+.7*g(q,vec2(.41,.27),vec2(.15,.21))+.4*g(q,vec2(.35,.31),vec2(.035,.045));
  d=mix(d,.25,smoothstep(.40,.50,q.y));
  q-=vec2(look.x*.011,look.y*.006)*(d-.5);
  float jm=g(q,vec2(.37,.385),vec2(.075,.05))*smoothstep(.343,.36,q.y);q.y-=mouth*.017*jm;
  q.y+=brow*.007*g(q,vec2(.36,.213),vec2(.1,.016));
+ q.x-=turn*.011*(g(q,E1,vec2(.024,.012))+g(q,E2,vec2(.026,.012)));
  vec3 c=texture2D(T,q).rgb;
  float gap=g(q,vec2(.364,.352+mouth*.004),vec2(.026,.0035+mouth*.0078));
  c=mix(c,vec3(.12,.03,.03),clamp(gap*mouth*1.05,0.,.86));
- vec2 e1=vec2(.300,.2415),e2=vec2(.4225,.2385);
+ vec2 e1=E1,e2=E2;
  if(blink>.02){
   c=lidCol(q,e1,blink,c);c=lidCol(q,e2,blink,c);
   c*=1.-.55*(lash(q,e1,blink)+lash(q,e2,blink));
@@ -173,11 +180,112 @@ void main(){
  gl_FragColor=vec4(c,1.);
 }`;
  const sh=(t,s)=>{const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(o));return o};
- let pr;try{pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,VS));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,FS));gl.linkProgram(pr)}catch(e){console.error(e);warn("No pude iniciar el retrato animado.");return}
+ let pr;try{pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,VS));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,FS));gl.bindAttribLocation(pr,0,"s");gl.linkProgram(pr)}catch(e){console.error(e);warn("No pude iniciar el retrato animado.");return}
  gl.useProgram(pr);
  const bf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,bf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([0,0,1,0,0,1,1,1]),gl.STATIC_DRAW);
  const ls=gl.getAttribLocation(pr,"s");gl.enableVertexAttribArray(ls);gl.vertexAttribPointer(ls,2,gl.FLOAT,false,0,0);
- const U=n=>gl.getUniformLocation(pr,n),u={win:U("win"),look:U("look"),mouth:U("mouth"),blink:U("blink"),brow:U("brow"),rot:U("rot"),bob:U("bob")};
+ const U=n=>gl.getUniformLocation(pr,n),u={win:U("win"),look:U("look"),mouth:U("mouth"),blink:U("blink"),brow:U("brow"),rot:U("rot"),bob:U("bob"),turn:U("turn")};
+ const TFS=`#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+uniform vec2 res,look;uniform float t,mouth,blink,brow,hx,hy,bounce,camD,tf;varying vec2 uv;
+const vec3 PV=vec3(0.,-1.,0.);
+float sdE(vec3 p,vec3 r){float k0=length(p/r);float k1=length(p/(r*r));return k0*(k0-1.)/max(k1,1e-4);}
+float sdCap(vec3 p,vec3 a,vec3 b,float r){vec3 pa=p-a,ba=b-a;float h=clamp(dot(pa,ba)/dot(ba,ba),0.,1.);return length(pa-ba*h)-r;}
+float smin(float a,float b,float k){float h=clamp(.5+.5*(b-a)/k,0.,1.);return mix(b,a,h)-k*h*(1.-h);}
+float sdTor(vec3 p,vec2 s){vec2 q=vec2(length(p.xz)-s.x,p.y);return length(q)-s.y;}
+vec2 SU(vec2 a,float d,float id,float k){float m=smin(a.x,d,k);return vec2(m,d<a.x?id:a.y);}
+vec3 toHead(vec3 p){p.y-=bounce;vec3 r=p-PV;float c=cos(-hy),s=sin(-hy);r=vec3(c*r.x+s*r.z,r.y,-s*r.x+c*r.z);c=cos(-hx);s=sin(-hx);r=vec3(r.x,c*r.y-s*r.z,s*r.y+c*r.z);return r+PV;}
+vec2 map(vec3 p){
+ vec3 q=toHead(p),qs=vec3(abs(q.x),q.y,q.z);
+ float head=sdE(q,vec3(1.03,1.06,.96));
+ float cavE=sdE(q-vec3(0.,-.66-.06*mouth,.88),vec3(.27+.04*mouth,.075+.12*mouth,.22));
+ float upE=sdE(q-vec3(0.,-.57+.3*mouth,.88),vec3(.36,.115,.3));
+ float cav=max(cavE,-upE);
+ vec2 r=vec2(max(head,-cav),(-cav>head)?10.:1.);
+ r=SU(r,sdE(qs-vec3(1.,-.05,-.08),vec3(.13,.24,.11)),1.,.04);
+ r=SU(r,sdE(q-vec3(0.,-.1,.93),vec3(.19,.17,.19)),13.,.08);
+ r=SU(r,sdE(qs-vec3(.40,.12,.74),vec3(.235,.235*(1.-.88*blink),.2)),5.,.03);
+ float by=brow*.07;
+ r=SU(r,sdCap(qs,vec3(.18,.52+by,.84),vec3(.58,.58+by,.62),.075),11.,.03);
+ float mu=sdCap(qs,vec3(0.,-.40,.93),vec3(.24,-.45,.89),.115);
+ mu=smin(mu,sdCap(qs,vec3(.24,-.45,.89),vec3(.52,-.43,.78),.095),.05);
+ mu=smin(mu,sdCap(qs,vec3(.52,-.43,.78),vec3(.70,-.28,.64),.06),.05);
+ r=SU(r,mu,4.,.02);
+ r=SU(r,sdCap(q,vec3(0.,-.79-.08*mouth,.67),vec3(0.,-.87-.08*mouth,.6),.06),4.,.03);
+ float hair=max(sdE(q-vec3(0.,.12,-.06),vec3(1.1,1.12,1.04)),(.93-(q.y+.34*q.z))*.9);
+ hair=smin(hair,sdE(qs-vec3(.94,.32,-.1),vec3(.2,.5,.5)),.1);
+ r=SU(r,hair,2.,.04);
+ r=SU(r,sdE(q-vec3(-.15,1.2,.1),vec3(.62,.25,.6)),3.,.1);
+ vec3 pb=p;pb.y-=bounce*.35;vec3 pbs=vec3(abs(pb.x),pb.y,pb.z);
+ float torso=sdE(pb-vec3(0.,-2.1,0.),vec3(1.28,1.05,.78));
+ r=SU(r,torso,6.,.05);
+ r=SU(r,sdE(pbs-vec3(1.05,-1.55,.02),vec3(.3,.12,.26)),7.,.03);
+ r=SU(r,sdTor(pb-vec3(0.,-1.12,.05),vec2(.5,.14)),8.,.04);
+ r=SU(r,sdE(pb-vec3(0.,-1.42,.62),vec3(.2,.17,.12)),9.,.03);
+ r=SU(r,sdE(pbs-vec3(.3,-1.42,.6),vec3(.24,.14,.09)),9.,.03);
+ r=SU(r,sdE(pb-vec3(.3,-1.85,.76),vec3(.075,.075,.05)),7.,.01);
+ r=SU(r,sdE(pb-vec3(.3,-2.2,.78),vec3(.075,.075,.05)),7.,.01);
+ r=SU(r,sdE(pb-vec3(-.45,-2.0,.74),vec3(.14,.14,.04)),7.,.01);
+ return r;
+}
+vec3 nrm(vec3 p){vec2 e=vec2(.003,-.003);return normalize(e.xyy*map(p+e.xyy).x+e.yyx*map(p+e.yyx).x+e.yxy*map(p+e.yxy).x+e.xxx*map(p+e.xxx).x);}
+vec3 bgc(vec2 sp){
+ vec3 c=mix(vec3(.62,.84,1.),vec3(1.,.93,.75),smoothstep(-.5,.6,sp.y));
+ for(int i=0;i<6;i++){float fi=float(i);vec2 cp=vec2(sin(fi*2.3+t*.15)*.8,cos(fi*1.7+t*.12)*.5)*vec2(res.x/res.y,1.);float d=length(sp-cp);c=mix(c,vec3(1.),.28*smoothstep(.16+.03*fi,.12+.03*fi,d));}
+ return c;
+}
+void main(){
+ vec2 sp=vec2((uv.x-.5)*res.x/res.y,.5-uv.y);
+ vec3 ro=vec3(0.,-.8,camD),rd=normalize(vec3(sp*2.*tf,-1.));
+ vec3 oc=ro-vec3(0.,-.8,0.);float b=dot(oc,rd),h=b*b-(dot(oc,oc)-10.89);
+ vec3 col=bgc(sp);
+ if(h>0.){
+  float tt=max(-b-sqrt(h),0.),tEnd=-b+sqrt(h),ma=1e9;bool hit=false;
+  for(int i=0;i<80;i++){vec3 pp=ro+rd*tt;float d=map(pp).x;ma=min(ma,d/tt);if(d<.0025){hit=true;break;}tt+=d*.92;if(tt>tEnd)break;}
+  if(hit){
+   vec3 pos=ro+rd*tt;vec2 m=map(pos);vec3 n=nrm(pos),q=toHead(pos);vec3 pb=pos;pb.y-=bounce*.35;float id=m.y;
+   vec3 a=vec3(.9);
+   if(id<1.5||id>12.5){a=id>12.5?vec3(.98,.66,.56):vec3(.96,.78,.62);vec2 cd=(vec2(abs(q.x),q.y)-vec2(.6,-.25))/vec2(.2,.14);a=mix(a,vec3(1.,.5,.52),.6*exp(-dot(cd,cd))*step(0.,q.z));}
+   else if(id<2.5)a=vec3(.24,.17,.14);
+   else if(id<3.5)a=vec3(.84,.84,.87);
+   else if(id<4.5)a=vec3(.52,.52,.56);
+   else if(id<5.5){
+    vec3 le=vec3(abs(q.x)-.40,q.y-.12,q.z-.74);a=vec3(1.);
+    if(blink>.55)a=vec3(.3,.18,.14);
+    else if(le.z>.05){vec2 o=le.xy-vec2(look.x,-look.y)*.04;float r=length(o);
+     if(r<.07)a=vec3(.05);else if(r<.135)a=vec3(.45,.27,.12);
+     if(length(le.xy-vec2(-.06,.075))<.035)a=vec3(1.);}
+   }
+   else if(id<6.5){a=vec3(.16,.30,.72);float dd=dot(pb.xy-vec2(-.9,-1.4),vec2(.64,.768));if(pb.z>.1){if(abs(dd)<.2)a=vec3(.86,.16,.2);else if(abs(dd)<.26)a=vec3(.98,.74,.1);}}
+   else if(id<7.5)a=vec3(.98,.74,.1);
+   else if(id<8.5)a=vec3(.97,.95,.92);
+   else if(id<9.5)a=vec3(.86,.16,.2);
+   else if(id<10.5){a=vec3(.42,.07,.1);if(q.y>-.625+.08*mouth-.05&&mouth>.15)a=vec3(.98);}
+   else a=vec3(.2,.15,.14);
+   vec3 L=normalize(vec3(-.5,.8,.7));float df=dot(n,L);
+   float bd=df>.5?1.:(df>.0?.8:.6);
+   vec3 c=a*bd+.05;
+   float ndv=max(dot(n,-rd),0.);
+   c+=pow(1.-ndv,3.)*.1;
+   if(id>6.5&&id<7.5&&pow(max(dot(reflect(-L,n),-rd),0.),24.)>.5)c=vec3(1.,.95,.7);
+   if(ndv<.2)c*=.35;
+   col=c;
+  } else if(ma<.0045)col=vec3(.1,.06,.06);
+ }
+ gl_FragColor=vec4(col,1.);
+}
+`;
+ let pt=null;
+ try{pt=gl.createProgram();gl.attachShader(pt,sh(gl.VERTEX_SHADER,VS));gl.attachShader(pt,sh(gl.FRAGMENT_SHADER,TFS));gl.bindAttribLocation(pt,0,"s");gl.linkProgram(pt);if(!gl.getProgramParameter(pt,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(pt))}catch(e){console.error(e);pt=null}
+ const UT=n=>pt&&gl.getUniformLocation(pt,n),ut={win:UT("win"),res:UT("res"),look:UT("look"),t:UT("t"),mouth:UT("mouth"),blink:UT("blink"),brow:UT("brow"),hx:UT("hx"),hy:UT("hy"),bounce:UT("bounce"),camD:UT("camD"),tf:UT("tf")};
+ let toon=Q.get("estilo")==="dibujo";const TF=Math.tan(16.5*Math.PI/180);let camD=7;
+ const sbtn=$("#style");
+ const paintBtn=()=>{sbtn.textContent=toon?"Retrato realista":"Dibujo animado 3D";sbtn.setAttribute("aria-pressed",String(toon));if(!pt)sbtn.hidden=true};
+ sbtn.onclick=()=>{toon=!toon;paintBtn();fit()};
+ 
  const tx=gl.createTexture(),im=new Image();
  let win=[0,0,1,1],ready=false;
  im.onload=()=>{gl.bindTexture(gl.TEXTURE_2D,tx);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,im);
@@ -185,15 +293,15 @@ void main(){
  im.src=IMG;
  /* ventana visible: ancho completo de la foto si cabe; si el recuadro es angosto, se recorta a los costados */
  function fit(){
-  const dpr=Math.min(devicePixelRatio||1,2),w=stage.clientWidth,h=stage.clientHeight;if(!w||!h)return;
+  const w=stage.clientWidth,h=stage.clientHeight;if(!w||!h)return;const dpr=toon?Math.min(devicePixelRatio||1,1.25)*.85:Math.min(devicePixelRatio||1,2);
   cv.width=Math.round(w*dpr);cv.height=Math.round(h*dpr);gl.viewport(0,0,cv.width,cv.height);
   const S=w/h;let vw=1,vh=IW/(IH*S);
   if(vh>1){vh=1;vw=Math.min(1,S*IH/IW)}
   const cx=Math.min(1-vw/2,Math.max(vw/2,.43)),cy=Math.min(1-vh/2,Math.max(vh/2,.3));
-  win=[cx-vw/2,cy-vh/2,vw,vh];
+  win=[cx-vw/2,cy-vh/2,vw,vh];camD=Math.max(5.3/(2*TF),3.7/(2*TF*S));
  }
- new ResizeObserver(fit).observe(stage);fit();
- let lx=0,ly=0,tx_=0,ty_=0,mouth=0,brow=0,blinkV=0,nextBlink=1800,blinkAt=-1,fr=0;
+ paintBtn();new ResizeObserver(fit).observe(stage);fit();
+ let turnV=0,lx=0,ly=0,tx_=0,ty_=0,mouth=0,brow=0,blinkV=0,nextBlink=1800,blinkAt=-1,fr=0;
  addEventListener("pointermove",e=>{const r=stage.getBoundingClientRect();tx_=Math.max(-1,Math.min(1,((e.clientX-r.left)/r.width-.5)*2));ty_=Math.max(-1,Math.min(1,((e.clientY-r.top)/r.height-.5)*2))});
  function frame(t){
   if(conv&&++fr%2===0)Promise.resolve(conv.getOutputVolume()).then(v=>{vol=+v||0}).catch(()=>{});
@@ -205,11 +313,18 @@ void main(){
   if(blinkAt<0&&t>nextBlink)blinkAt=t;
   let b=0;if(blinkAt>=0){const p=(t-blinkAt)/170;if(p>=1){blinkAt=-1;nextBlink=t+2200+Math.random()*3000}else b=Math.sin(p*Math.PI)}
   blinkV=Math.max(b,speaking?.1*mouth:0);
-  const V={mouth,blink:blinkV,brow:k*brow,rot:k*(Math.sin(t/2600)*.006+lx*.012),bob:k*(Math.sin(t/1800)*.0012-.0022*mouth)};
+  turnV+=(((live||speaking)?1:0)-turnV)*.05;
+  const V={turn:turnV,mouth,blink:blinkV,brow:k*brow,rot:k*(Math.sin(t/2600)*.006+lx*.012),bob:k*(Math.sin(t/1800)*.0012-.0022*mouth)};
   Object.assign(V,F);
-  if(ready){
+  if(toon&&pt){
+   gl.useProgram(pt);gl.uniform4f(ut.win,0,0,1,1);gl.uniform2f(ut.res,cv.width,cv.height);gl.uniform2f(ut.look,lx*k,ly*k);gl.uniform1f(ut.t,t/1000);
+   gl.uniform1f(ut.mouth,V.mouth);gl.uniform1f(ut.blink,V.blink);gl.uniform1f(ut.brow,V.brow);
+   gl.uniform1f(ut.hx,ly*.18*k);gl.uniform1f(ut.hy,lx*.35*k);gl.uniform1f(ut.bounce,k*(Math.sin(t/520)*.035+(speaking?Math.abs(Math.sin(t/130))*.045*V.mouth:0)));
+   gl.uniform1f(ut.camD,camD);gl.uniform1f(ut.tf,TF);gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  }else if(ready){
+   gl.useProgram(pr);
    gl.uniform4f(u.win,...win);gl.uniform2f(u.look,k*lx,k*ly);
-   gl.uniform1f(u.mouth,V.mouth);gl.uniform1f(u.blink,V.blink);gl.uniform1f(u.brow,V.brow);gl.uniform1f(u.rot,V.rot);gl.uniform1f(u.bob,V.bob);
+   gl.uniform1f(u.mouth,V.mouth);gl.uniform1f(u.blink,V.blink);gl.uniform1f(u.brow,V.brow);gl.uniform1f(u.rot,V.rot);gl.uniform1f(u.bob,V.bob);gl.uniform1f(u.turn,V.turn);
    gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
   }
   requestAnimationFrame(frame);
@@ -218,7 +333,7 @@ void main(){
  /* Comprobación de que el rostro no queda bajo ningún texto (se puede invocar desde la consola) */
  window.__fontana={force:F,check(){
   const r=stage.getBoundingClientRect(),X=u=>r.left+(u-win[0])/win[2]*r.width,Y=v=>r.top+(v-win[1])/win[3]*r.height;
-  const f={left:X(.2),right:X(.6),top:Y(.06),bottom:Y(.45)};
+  let f={left:X(.2),right:X(.6),top:Y(.06),bottom:Y(.45)};if(toon){const vh=2*camD*TF,asp=r.width/r.height,P=(Xw,Yw)=>[r.left+r.width*(.5+Xw/(vh*asp)),r.top+r.height*(.5-(Yw+.8)/vh)],a=P(-1.15,1.45),b=P(1.15,-1.1);f={left:a[0],right:b[0],top:a[1],bottom:b[1]}}
   const hit=[...document.querySelectorAll("aside *")].filter(el=>{const q=el.getBoundingClientRect();return q.width&&q.height&&!(q.right<f.left||q.left>f.right||q.bottom<f.top||q.top>f.bottom)});
   return{face:f,stage:r.toJSON(),textElementsOverFace:hit.map(e=>e.tagName+(e.id?"#"+e.id:""))};
  }};
